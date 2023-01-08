@@ -1,0 +1,160 @@
+package trezor
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/meehow/go-trezor/pb"
+
+	"github.com/trezor/trezord-go/core"
+	"github.com/trezor/trezord-go/memorywriter"
+	"github.com/trezor/trezord-go/usb"
+	"github.com/trezor/trezord-go/wire"
+	"google.golang.org/protobuf/proto"
+)
+
+const attempts = 10
+
+type Trezor struct {
+	core       *core.Core
+	path       string
+	ssid       string
+	passphrase string
+	logger     *log.Logger
+}
+
+type Message struct {
+	Kind pb.MessageType
+	Data []byte
+}
+
+func New(passphrase string, deriveCardano bool, logger *log.Logger) (*Trezor, error) {
+	longMemoryWriter := memorywriter.New(90000, 200, true, nil)
+	libusb, err := usb.InitLibUSB(longMemoryWriter, true, true, true)
+	if err != nil {
+		return nil, fmt.Errorf("libusb: %w", err)
+	}
+	bus := usb.Init(libusb)
+	c := core.New(bus, longMemoryWriter, true, true)
+	var enums []core.EnumerateEntry
+	for i := 1; i <= attempts; i++ {
+		enums, err = c.Enumerate()
+		if err != nil {
+			return nil, err
+		}
+		if len(enums) > 0 {
+			err = nil
+			break
+		}
+		if i == attempts {
+			return nil, errors.New("trezor not found")
+		}
+		fmt.Println("connect trezor")
+		time.Sleep(time.Second * 3)
+	}
+	tr := &Trezor{
+		core:       c,
+		path:       enums[0].Path,
+		passphrase: passphrase,
+		logger:     logger,
+	}
+	if enums[0].Session == nil {
+		tr.ssid, err = c.Acquire(tr.path, "", false)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		tr.ssid = *enums[0].Session
+	}
+	sessionID := make([]byte, 32)
+	rand.Read(sessionID)
+	_, err = tr.Call(&pb.Initialize{
+		DeriveCardano: &deriveCardano,
+		SessionId:     sessionID,
+	})
+	return tr, err
+}
+
+func (tr *Trezor) Call(msg proto.Message) (*Message, error) {
+	binbody, err := Encode(msg)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := msg.(*pb.PassphraseAck); ok {
+		tr.logger.Printf("---> MessageType_%v", msg.ProtoReflect().Type().Descriptor().Name())
+	} else {
+		tr.logger.Printf("---> MessageType_%v %x", msg.ProtoReflect().Type().Descriptor().Name(), binbody)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	binres, err := tr.core.Call(binbody, tr.ssid, core.CallModeReadWrite, false, ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := Decode(binres)
+	if err != nil {
+		return nil, err
+	}
+
+	tr.logger.Printf("<--- %v %x", resp.Kind.String(), binres)
+
+	switch resp.Kind {
+	case pb.MessageType_MessageType_Failure:
+		msg := new(pb.Failure)
+		err = proto.Unmarshal(resp.Data, msg)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("trezor: %s", msg.GetMessage())
+	case pb.MessageType_MessageType_ButtonRequest:
+		msg := new(pb.ButtonRequest)
+		err = proto.Unmarshal(resp.Data, msg)
+		if err != nil {
+			return nil, err
+		}
+		tr.logger.Println("ButtonRequest", msg.String())
+		return tr.Call(&pb.ButtonAck{})
+	case pb.MessageType_MessageType_PassphraseRequest:
+		return tr.Call(&pb.PassphraseAck{
+			Passphrase: &tr.passphrase,
+		})
+	}
+	return Decode(binres)
+}
+
+func Encode(msg proto.Message) ([]byte, error) {
+	name := "MessageType_" + string(msg.ProtoReflect().Type().Descriptor().Name())
+	kind := uint16(pb.MessageType_value[name])
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+	var header [6]byte
+	binary.BigEndian.PutUint16(header[0:2], kind)
+	binary.BigEndian.PutUint32(header[2:6], uint32(len(data)))
+	return append(header[:], data...), nil
+}
+
+func Decode(binbody []byte) (*Message, error) {
+	if len(binbody) < 6 {
+		return nil, core.ErrMalformedData
+	}
+	kind := binary.BigEndian.Uint16(binbody[0:2])
+	size := binary.BigEndian.Uint32(binbody[2:6])
+	data := binbody[6:]
+	if uint32(len(data)) != size {
+		return nil, core.ErrMalformedData
+	}
+	if wire.Validate(data) != nil {
+		return nil, core.ErrMalformedData
+	}
+	return &Message{
+		Kind: pb.MessageType(kind),
+		Data: data,
+	}, nil
+}
