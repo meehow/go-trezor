@@ -90,7 +90,7 @@ func (tr *Trezor) Call(msg proto.Message) (*Message, error) {
 	} else {
 		tr.logger.Printf("---> MessageType_%v %x", msg.ProtoReflect().Type().Descriptor().Name(), binbody)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	binres, err := tr.core.Call(binbody, tr.ssid, core.CallModeReadWrite, false, ctx)
 	if err != nil {
