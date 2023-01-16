@@ -41,7 +41,7 @@ type Message struct {
 	Data []byte
 }
 
-func New(cfg *Config) (*Trezor, error) {
+func New(cfg Config) (*Trezor, error) {
 	longMemoryWriter := memorywriter.New(90000, 200, true, nil)
 	libusb, err := usb.InitLibUSB(longMemoryWriter, true, true, true)
 	if err != nil {
