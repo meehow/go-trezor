@@ -9,7 +9,7 @@ import (
 )
 
 func TestSimulator(t *testing.T) {
-	tr, err := New(&Config{SimulatorPort: 21324})
+	tr, err := New(Config{SimulatorPort: 21324})
 	if err != nil {
 		t.Fatal(err)
 	}
