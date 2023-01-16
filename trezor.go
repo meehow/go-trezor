@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const attempts = 10
+const attempts = 20
 
 type Trezor struct {
 	core       *core.Core
@@ -28,19 +29,34 @@ type Trezor struct {
 	logger     *log.Logger
 }
 
+type Config struct {
+	DeriveCardano bool
+	Logger        *log.Logger
+	Passphrase    string
+	SimulatorPort int
+}
+
 type Message struct {
 	Kind pb.MessageType
 	Data []byte
 }
 
-func New(passphrase string, deriveCardano bool, logger *log.Logger) (*Trezor, error) {
+func New(cfg *Config) (*Trezor, error) {
 	longMemoryWriter := memorywriter.New(90000, 200, true, nil)
 	libusb, err := usb.InitLibUSB(longMemoryWriter, true, true, true)
 	if err != nil {
 		return nil, fmt.Errorf("libusb: %w", err)
 	}
-	bus := usb.Init(libusb)
-	c := core.New(bus, longMemoryWriter, true, true)
+	bus := []core.USBBus{libusb}
+	if cfg.SimulatorPort != 0 {
+		udp, err := usb.InitUDP([]usb.PortTouple{{Normal: cfg.SimulatorPort}}, longMemoryWriter)
+		if err != nil {
+			return nil, err
+		}
+		bus = append(bus, udp)
+	}
+	b := usb.Init(bus...)
+	c := core.New(b, longMemoryWriter, true, true)
 	var enums []core.EnumerateEntry
 	for i := 1; i <= attempts; i++ {
 		enums, err = c.Enumerate()
@@ -60,8 +76,11 @@ func New(passphrase string, deriveCardano bool, logger *log.Logger) (*Trezor, er
 	tr := &Trezor{
 		core:       c,
 		path:       enums[0].Path,
-		passphrase: passphrase,
-		logger:     logger,
+		passphrase: cfg.Passphrase,
+		logger:     cfg.Logger,
+	}
+	if tr.logger == nil {
+		tr.logger = log.New(io.Discard, "", 0)
 	}
 	if enums[0].Session == nil {
 		tr.ssid, err = c.Acquire(tr.path, "", false)
@@ -74,7 +93,7 @@ func New(passphrase string, deriveCardano bool, logger *log.Logger) (*Trezor, er
 	sessionID := make([]byte, 32)
 	rand.Read(sessionID)
 	_, err = tr.Call(&pb.Initialize{
-		DeriveCardano: &deriveCardano,
+		DeriveCardano: &cfg.DeriveCardano,
 		SessionId:     sessionID,
 	})
 	return tr, err
