@@ -8,8 +8,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestSimulator(t *testing.T) {
-	tr, err := New(Config{SimulatorPort: 21324})
+func TestEmulator(t *testing.T) {
+	tr, err := New(Config{EmulatorPort: 21324})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -33,7 +33,7 @@ type Config struct {
 	DeriveCardano bool
 	Logger        *log.Logger
 	Passphrase    string
-	SimulatorPort int
+	EmulatorPort  int
 }
 
 type Message struct {
@@ -48,8 +48,8 @@ func New(cfg Config) (*Trezor, error) {
 		return nil, fmt.Errorf("libusb: %w", err)
 	}
 	bus := []core.USBBus{libusb}
-	if cfg.SimulatorPort != 0 {
-		udp, err := usb.InitUDP([]usb.PortTouple{{Normal: cfg.SimulatorPort}}, longMemoryWriter)
+	if cfg.EmulatorPort != 0 {
+		udp, err := usb.InitUDP([]usb.PortTouple{{Normal: cfg.EmulatorPort}}, longMemoryWriter)
 		if err != nil {
 			return nil, err
 		}
