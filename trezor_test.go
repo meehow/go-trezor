@@ -9,7 +9,10 @@ import (
 )
 
 func TestEmulator(t *testing.T) {
-	tr, err := New(Config{EmulatorPort: 21324})
+	tr, err := New(Config{
+		Logger:       log.Default(),
+		EmulatorPort: 21324,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

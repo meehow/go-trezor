@@ -104,9 +104,10 @@ func (tr *Trezor) Call(msg proto.Message) (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := msg.(*pb.PassphraseAck); ok {
+	switch msg.(type) {
+	case *pb.PassphraseAck, *pb.LoadDevice, *pb.FirmwareUpload:
 		tr.logger.Printf("---> MessageType_%v", msg.ProtoReflect().Type().Descriptor().Name())
-	} else {
+	default:
 		tr.logger.Printf("---> MessageType_%v %x", msg.ProtoReflect().Type().Descriptor().Name(), binbody)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
