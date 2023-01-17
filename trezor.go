@@ -27,6 +27,7 @@ type Trezor struct {
 	ssid       string
 	passphrase string
 	logger     *log.Logger
+	debug      bool
 }
 
 type Config struct {
@@ -34,6 +35,7 @@ type Config struct {
 	Logger        *log.Logger
 	Passphrase    string
 	EmulatorPort  int
+	Debug         bool
 }
 
 type Message struct {
@@ -78,6 +80,7 @@ func New(cfg Config) (*Trezor, error) {
 		path:       enums[0].Path,
 		passphrase: cfg.Passphrase,
 		logger:     cfg.Logger,
+		debug:      cfg.Debug,
 	}
 	if tr.logger == nil {
 		tr.logger = log.New(io.Discard, "", 0)
@@ -112,7 +115,7 @@ func (tr *Trezor) Call(msg proto.Message) (*Message, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	binres, err := tr.core.Call(binbody, tr.ssid, core.CallModeReadWrite, false, ctx)
+	binres, err := tr.core.Call(binbody, tr.ssid, core.CallModeReadWrite, tr.debug, ctx)
 	if err != nil {
 		return nil, err
 	}
