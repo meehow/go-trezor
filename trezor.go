@@ -51,7 +51,10 @@ func New(cfg Config) (*Trezor, error) {
 	}
 	bus := []core.USBBus{libusb}
 	if cfg.EmulatorPort != 0 {
-		udp, err := usb.InitUDP([]usb.PortTouple{{Normal: cfg.EmulatorPort}}, longMemoryWriter)
+		udp, err := usb.InitUDP([]usb.PortTouple{{
+			Normal: cfg.EmulatorPort,
+			Debug:  cfg.EmulatorPort + 1,
+		}}, longMemoryWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -75,6 +78,7 @@ func New(cfg Config) (*Trezor, error) {
 		fmt.Println("connect trezor")
 		time.Sleep(time.Second * 3)
 	}
+	fmt.Printf("%+v\n", enums[0])
 	tr := &Trezor{
 		core:       c,
 		path:       enums[0].Path,
@@ -86,19 +90,22 @@ func New(cfg Config) (*Trezor, error) {
 		tr.logger = log.New(io.Discard, "", 0)
 	}
 	if enums[0].Session == nil {
-		tr.ssid, err = c.Acquire(tr.path, "", false)
+		tr.ssid, err = c.Acquire(tr.path, "", cfg.Debug)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		tr.ssid = *enums[0].Session
 	}
-	sessionID := make([]byte, 32)
-	rand.Read(sessionID)
-	_, err = tr.Call(&pb.Initialize{
-		DeriveCardano: &cfg.DeriveCardano,
-		SessionId:     sessionID,
-	})
+	fmt.Println("ssid", tr.ssid)
+	if !cfg.Debug {
+		sessionID := make([]byte, 32)
+		rand.Read(sessionID)
+		_, err = tr.Call(&pb.Initialize{
+			DeriveCardano: &cfg.DeriveCardano,
+			SessionId:     sessionID,
+		})
+	}
 	return tr, err
 }
 
