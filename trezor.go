@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/meehow/go-trezor/pb"
-
 	"github.com/trezor/trezord-go/core"
 	"github.com/trezor/trezord-go/memorywriter"
 	"github.com/trezor/trezord-go/usb"
